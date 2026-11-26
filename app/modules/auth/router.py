@@ -2,8 +2,8 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.session import get_db
-from app.modules.auth.schemas import SignupRequest
-from app.modules.auth.service import signup_user
+from app.modules.auth.schemas import LoginRequest, SignupRequest, TokenResponse
+from app.modules.auth.service import login_user, signup_user
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
 
@@ -38,4 +38,26 @@ async def signup(
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail=str(error)
+        )
+
+@router.post(
+    "/login",
+    response_model=TokenResponse,
+    status_code=status.HTTP_200_OK,
+)
+async def login(
+    payload: LoginRequest,
+    db: AsyncSession = Depends(get_db),
+):
+    try:
+        return await login_user(
+            db=db,
+            email=str(payload.email),
+            password=payload.password,
+        )
+
+    except ValueError:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid email or password",
         )

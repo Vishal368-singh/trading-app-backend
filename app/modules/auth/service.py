@@ -3,7 +3,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.modules.users.models import User, UserPreference
 from app.modules.auth.schemas import SignupRequest
-from app.core.security import hash_password
+from app.core.security import (
+    hash_password,
+    verify_password,
+    create_access_token,
+    create_refresh_token,
+)
 
 
 async def signup_user(
@@ -48,3 +53,34 @@ async def signup_user(
     await db.refresh(preferences)
 
     return user, preferences
+
+async def login_user(
+    db: AsyncSession,
+    email: str,
+    password: str,
+) -> dict:
+
+    normalized_email = email.strip().lower()
+
+    result = await db.execute(
+        select(User).where(User.email == normalized_email)
+    )
+
+    user = result.scalar_one_or_none()
+
+    # Generic error: do not reveal whether the email exists
+    if not user or not verify_password(password, user.password_hash):
+        raise ValueError("Invalid email or password")
+
+    if not user.is_active:
+        raise ValueError("Account is inactive")
+
+    access_token = create_access_token(str(user.id))
+    refresh_token = create_refresh_token(str(user.id))
+
+    return {
+        "access_token": access_token,
+        "refresh_token": refresh_token,
+        "token_type": "bearer",
+        "expires_in": 900,
+    }
