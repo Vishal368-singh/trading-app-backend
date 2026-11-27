@@ -23,13 +23,19 @@ async def signup(
                 "full_name": user.full_name,
                 "email": user.email,
                 "role": user.role,
+                "mobile": user.mobile,
+                "age": user.age,
                 "preferences": {
                     "market": preferences.market,
                     "timezone": preferences.timezone,
                     "currency": preferences.currency,
                     "default_timeframe": preferences.default_timeframe,
                     "theme": preferences.theme,
-                    "notifications_enabled": preferences.notifications_enabled
+                    "notifications_enabled": preferences.notifications_enabled,
+                    "exchanges": preferences.exchanges,
+                    "segments": preferences.segments,
+                    "watchlists": preferences.watchlists,
+                    "alerts": preferences.alerts,
                 }
             }
         }
@@ -52,7 +58,7 @@ async def login(
     try:
         return await login_user(
             db=db,
-            email=str(payload.email),
+            identifier=payload.identifier,
             password=payload.password,
         )
 

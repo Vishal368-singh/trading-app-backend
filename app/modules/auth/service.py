@@ -31,6 +31,8 @@ async def signup_user(
     user = User(
         full_name=payload.full_name.strip(),
         email=email,
+        mobile=payload.mobile,
+        age=payload.age,
         password_hash=hash_password(payload.password),
         role="user",
         is_active=True,
@@ -54,23 +56,36 @@ async def signup_user(
 
     return user, preferences
 
+
+
 async def login_user(
     db: AsyncSession,
-    email: str,
+    identifier: str,
     password: str,
 ) -> dict:
 
-    normalized_email = email.strip().lower()
+    identifier = identifier.strip()
 
-    result = await db.execute(
-        select(User).where(User.email == normalized_email)
-    )
+    # Detect whether login is through email or mobile
+    if "@" in identifier:
+        identifier = identifier.lower()
+
+        result = await db.execute(
+            select(User).where(User.email == identifier)
+        )
+    else:
+        result = await db.execute(
+            select(User).where(User.mobile == identifier)
+        )
 
     user = result.scalar_one_or_none()
 
-    # Generic error: do not reveal whether the email exists
-    if not user or not verify_password(password, user.password_hash):
-        raise ValueError("Invalid email or password")
+    # Generic error to prevent account enumeration
+    if not user or not verify_password(
+        password,
+        user.password_hash
+    ):
+        raise ValueError("Invalid email/mobile or password")
 
     if not user.is_active:
         raise ValueError("Account is inactive")

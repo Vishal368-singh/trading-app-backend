@@ -4,7 +4,8 @@ from datetime import datetime
 
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy import Uuid
-from sqlalchemy import String, Boolean, DateTime, func, ForeignKey
+from sqlalchemy import String, Boolean, DateTime, func, ForeignKey, Integer, JSON, text
+from sqlalchemy.dialects.postgresql import JSONB
 from app.db.base import Base
 from typing import TYPE_CHECKING
 
@@ -30,6 +31,18 @@ class User(Base):
         unique=True,
         index=True,
         nullable=False,
+    )
+    
+    mobile: Mapped[str] = mapped_column(
+    String(15),
+    unique=True,
+    index=True,
+    nullable=False,
+    )
+
+    age: Mapped[int | None] = mapped_column(
+        Integer,
+        nullable=True,
     )
 
     password_hash: Mapped[str] = mapped_column(
@@ -103,6 +116,39 @@ class UserPreference(Base):
         String(20),
         default="NSE",
         server_default="NSE",
+        nullable=False,
+    )
+
+    exchanges: Mapped[list[str]] = mapped_column(
+    JSONB,
+    default=lambda: ["NSE", "BSE"],
+    server_default=text("""'["NSE", "BSE"]'::jsonb"""),
+    nullable=False,
+    )
+
+    segments: Mapped[list[str]] = mapped_column(
+        JSONB,
+        default=lambda: ["Cash", "Futures", "Options"],
+        server_default=text("""'["Cash", "Futures", "Options"]'::jsonb"""),
+        nullable=False,
+    )
+
+    watchlists: Mapped[list[str]] = mapped_column(
+    JSONB,
+    default=lambda: ["Nifty 50", "Bank Nifty"],
+    server_default=text("""'["Nifty 50", "Bank Nifty"]'::jsonb"""),
+    nullable=False,
+    )
+
+
+    alerts: Mapped[dict] = mapped_column(
+        JSONB,
+        default=lambda: {
+            "price": True,
+            "signal": True,
+            "order": True,
+        },
+        server_default=text("""'{"price": true, "signal": true, "order": true}'::jsonb"""),
         nullable=False,
     )
 
