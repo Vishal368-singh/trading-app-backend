@@ -1,14 +1,16 @@
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 import hashlib
 import uuid
 
-from jose import JWTError
+from jose import JWTError, jwt
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.modules.users.models import User, UserPreference
 from app.modules.auth.models import RefreshToken
 from app.modules.auth.schemas import SignupRequest
+from app.core.config import settings
+from app.modules.auth.otp_models import PasswordResetOTP
 from app.core.security import (
     hash_password,
     verify_password,
@@ -16,7 +18,8 @@ from app.core.security import (
     create_refresh_token,
     decode_token,
 )
-
+import secrets
+import hmac
 
 async def signup_user(
     db: AsyncSession,
@@ -349,4 +352,214 @@ async def refresh_access_token(
         "refresh_token": new_refresh_token,
         "token_type": "bearer",
         "expires_in": 900,
+    }
+
+def hash_otp(otp: str) -> str:
+    return hmac.new(
+        settings.JWT_SECRET_KEY.encode(),
+        otp.encode(),
+        hashlib.sha256,
+    ).hexdigest()
+
+
+async def request_password_otp(
+    db: AsyncSession,
+    identifier: str,
+) -> dict:
+
+    identifier = identifier.strip()
+
+    if "@" in identifier:
+        result = await db.execute(
+            select(User).where(
+                User.email == identifier.lower()
+            )
+        )
+    else:
+        result = await db.execute(
+            select(User).where(
+                User.mobile == identifier
+            )
+        )
+
+    user = result.scalar_one_or_none()
+
+    # Generic response prevents account enumeration
+    if not user:
+        return {
+            "message": "If the account exists, an OTP has been generated."
+        }
+
+    otp = f"{secrets.randbelow(1_000_000):06d}"
+
+    otp_record = PasswordResetOTP(
+        user_id=user.id,
+        otp_hash=hash_otp(otp),
+        expires_at=datetime.now(timezone.utc) + timedelta(minutes=5),
+    )
+
+    db.add(otp_record)
+    await db.commit()
+
+    # MOCK ONLY: remove this OTP from the response before production.
+    return {
+        "message": "Mock OTP generated successfully",
+        "mock_otp": otp,
+    }
+
+
+async def verify_password_otp(
+    db: AsyncSession,
+    identifier: str,
+    otp: str,
+) -> dict:
+
+    identifier = identifier.strip()
+
+    if "@" in identifier:
+        result = await db.execute(
+            select(User).where(
+                User.email == identifier.lower()
+            )
+        )
+    else:
+        result = await db.execute(
+            select(User).where(
+                User.mobile == identifier
+            )
+        )
+
+    user = result.scalar_one_or_none()
+
+    if not user:
+        raise ValueError("Invalid or expired OTP")
+
+    # Lock the latest OTP record to prevent concurrent verification.
+    result = await db.execute(
+        select(PasswordResetOTP)
+        .where(
+            PasswordResetOTP.user_id == user.id,
+            PasswordResetOTP.used.is_(False),
+        )
+        .order_by(PasswordResetOTP.created_at.desc())
+        .limit(1)
+        .with_for_update()
+    )
+
+    otp_record = result.scalar_one_or_none()
+
+    if not otp_record or otp_record.verified:
+        raise ValueError("Invalid or expired OTP")
+
+    now = datetime.now(timezone.utc)
+
+    if otp_record.expires_at <= now:
+        raise ValueError("OTP expired")
+
+    if otp_record.attempts >= 5:
+        raise ValueError("Maximum OTP attempts exceeded")
+
+    otp_record.attempts += 1
+
+    if not hmac.compare_digest(
+        otp_record.otp_hash,
+        hash_otp(otp),
+    ):
+        await db.commit()
+        raise ValueError("Invalid OTP")
+
+    otp_record.verified = True
+
+    reset_expiry = now + timedelta(minutes=10)
+
+    reset_token = jwt.encode(
+        {
+            "sub": str(user.id),
+            "type": "password_reset",
+            "otp_id": str(otp_record.id),
+            "exp": reset_expiry,
+        },
+        settings.JWT_SECRET_KEY,
+        algorithm=settings.JWT_ALGORITHM,
+    )
+
+    await db.commit()
+
+    return {
+        "message": "OTP verified successfully",
+        "reset_token": reset_token,
+        "expires_in": 600,
+    }
+
+
+async def reset_user_password(
+    db: AsyncSession,
+    reset_token: str,
+    new_password: str,
+) -> dict:
+
+    try:
+        payload = jwt.decode(
+            reset_token,
+            settings.JWT_SECRET_KEY,
+            algorithms=[settings.JWT_ALGORITHM],
+        )
+    except JWTError:
+        raise ValueError("Invalid or expired reset token")
+
+    if payload.get("type") != "password_reset":
+        raise ValueError("Invalid reset token")
+
+    try:
+        user_id = uuid.UUID(payload["sub"])
+        otp_id = uuid.UUID(payload["otp_id"])
+    except (ValueError, KeyError, TypeError):
+        raise ValueError("Invalid reset token")
+
+    result = await db.execute(
+        select(PasswordResetOTP)
+        .where(
+            PasswordResetOTP.id == otp_id,
+            PasswordResetOTP.user_id == user_id,
+        )
+        .with_for_update()
+    )
+
+    otp_record = result.scalar_one_or_none()
+
+    if (
+        not otp_record
+        or not otp_record.verified
+        or otp_record.used
+        or otp_record.expires_at <= datetime.now(timezone.utc)
+    ):
+        raise ValueError("OTP verification expired or already used")
+
+    result = await db.execute(
+        select(User).where(User.id == user_id)
+    )
+
+    user = result.scalar_one_or_none()
+
+    if not user or not user.is_active:
+        raise ValueError("User not found or inactive")
+
+    user.password_hash = hash_password(new_password)
+    otp_record.used = True
+
+    # Revoke all existing refresh tokens
+    result = await db.execute(
+        select(RefreshToken).where(
+            RefreshToken.user_id == user.id,
+            RefreshToken.revoked.is_(False),
+        )
+    )
+
+    for token in result.scalars().all():
+        token.revoked = True
+
+    await db.commit()
+
+    return {
+        "message": "Password reset successfully. Please log in again."
     }

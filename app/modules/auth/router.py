@@ -3,8 +3,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.dependencies import get_current_user
 from app.db.session import get_db
-from app.modules.auth.schemas import LoginRequest, LogoutRequest, SignupRequest, TokenResponse, RefreshRequest
-from app.modules.auth.service import login_user, signup_user, logout_user ,refresh_access_token
+from app.modules.auth.schemas import (LoginRequest, LogoutRequest, SignupRequest, TokenResponse,
+RefreshRequest, ForgotPasswordRequest, VerifyOTPRequest, ResetPasswordRequest)
+from app.modules.auth.service import (login_user, signup_user, logout_user ,refresh_access_token,
+                                       request_password_otp,
+    verify_password_otp,
+    reset_user_password,
+)
 
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
@@ -109,3 +114,44 @@ async def refresh_token(
             status_code=401,
             detail=str(exc),
         )
+
+@router.post("/forgot-password")
+async def forgot_password(
+    payload: ForgotPasswordRequest,
+    db: AsyncSession = Depends(get_db),
+):
+    try:
+        return await request_password_otp(
+            db=db,
+            identifier=payload.identifier,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+@router.post("/verify-otp")
+async def verify_otp(
+    payload: VerifyOTPRequest,
+    db: AsyncSession = Depends(get_db),
+):
+    try:
+        return await verify_password_otp(
+            db=db,
+            identifier=payload.identifier,
+            otp=payload.otp,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+@router.post("/reset-password")
+async def reset_password(
+    payload: ResetPasswordRequest,
+    db: AsyncSession = Depends(get_db),
+):
+    try:
+        return await reset_user_password(
+            db=db,
+            reset_token=payload.reset_token,
+            new_password=payload.new_password,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
