@@ -1,9 +1,13 @@
-from sqlalchemy import select
+from sqlalchemy import select, delete
 from sqlalchemy.orm import selectinload
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.modules.users.models import User, UserPreference
 from app.modules.users.schemas import UserProfileUpdate
+
+from sqlalchemy import delete
+from sqlalchemy.ext.asyncio import AsyncSession
+from app.core.security import verify_password
 
 async def update_user_profile(
     db: AsyncSession,
@@ -79,3 +83,25 @@ async def update_user_profile(
     )
 
     return result.scalar_one()
+
+
+
+async def delete_user_account(
+    db: AsyncSession,
+    user: User,
+    current_password: str
+):
+    # Verify current password
+    if not verify_password(current_password, user.password_hash):
+        raise ValueError("Incorrect password")
+
+    # Permanently delete account
+    await db.execute(
+        delete(User).where(User.id == user.id)
+    )
+
+    await db.commit()
+
+    return {
+        "message": "Your account has been permanently deleted."
+    }

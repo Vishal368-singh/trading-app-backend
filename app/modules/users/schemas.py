@@ -44,3 +44,8 @@ class UserProfileUpdate(BaseModel):
     )
 
     preferences: UserPreferenceUpdate | None = None
+
+class DeleteAccountRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    current_password: str = Field(min_length=8, max_length=128)

@@ -4,8 +4,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.dependencies import get_current_user
 from app.db.session import get_db
 from app.modules.users.models import User
-from app.modules.users.schemas import UserProfileUpdate
-from app.modules.users.service import update_user_profile
+from app.modules.users.schemas import UserProfileUpdate, DeleteAccountRequest
+from app.modules.users.service import update_user_profile, delete_user_account
 
 
 router = APIRouter(prefix="/users", tags=["Users"])
@@ -88,4 +88,22 @@ async def update_profile(
         raise HTTPException(
             status_code=400,
             detail=str(exc),
+        )
+
+@router.delete("/me")
+async def delete_my_account(
+    payload: DeleteAccountRequest,
+    current_user=Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    try:
+        return await delete_user_account(
+            db=db,
+            user=current_user,
+            current_password=payload.current_password
+        )
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
         )
