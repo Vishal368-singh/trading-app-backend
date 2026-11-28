@@ -3,8 +3,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.dependencies import get_current_user
 from app.db.session import get_db
-from app.modules.auth.schemas import LoginRequest, LogoutRequest, SignupRequest, TokenResponse
-from app.modules.auth.service import login_user, signup_user, logout_user
+from app.modules.auth.schemas import LoginRequest, LogoutRequest, SignupRequest, TokenResponse, RefreshRequest
+from app.modules.auth.service import login_user, signup_user, logout_user ,refresh_access_token
+
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
 
@@ -89,5 +90,22 @@ async def logout(
     except ValueError as exc:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        )
+
+@router.post("/refresh")
+async def refresh_token(
+    payload: RefreshRequest,
+    db: AsyncSession = Depends(get_db),
+):
+    try:
+        return await refresh_access_token(
+            db=db,
+            refresh_token=payload.refresh_token,
+        )
+
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=401,
             detail=str(exc),
         )

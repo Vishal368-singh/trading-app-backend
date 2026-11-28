@@ -2,6 +2,7 @@ from datetime import datetime, timezone
 import hashlib
 import uuid
 
+from jose import JWTError
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -171,3 +172,181 @@ async def logout_user(
     await db.commit()
 
     return True
+
+async def refresh_access_token(
+    db: AsyncSession,
+    refresh_token: str,
+) -> dict:
+
+    # 1. Decode and validate JWT
+    try:
+        payload = decode_token(refresh_token)
+    except JWTError:
+        raise ValueError("Invalid or expired refresh token")
+
+    if payload.get("type") != "refresh":
+        raise ValueError("Invalid refresh token")
+
+    try:
+        user_id = uuid.UUID(payload["sub"])
+    except (ValueError, KeyError, TypeError):
+        raise ValueError("Invalid refresh token")
+
+    # 2. Hash incoming refresh token
+    token_hash = hashlib.sha256(
+        refresh_token.encode()
+    ).hexdigest()
+
+    # 3. Find stored token and lock its row
+    result = await db.execute(
+        select(RefreshToken)
+        .where(
+            RefreshToken.token_hash == token_hash,
+            RefreshToken.user_id == user_id,
+        )
+        .with_for_update()
+    )
+
+    old_token = result.scalar_one_or_none()
+
+    if not old_token or old_token.revoked:
+        raise ValueError("Refresh token revoked or not found")
+
+    if old_token.expires_at <= datetime.now(timezone.utc):
+        raise ValueError("Refresh token expired")
+
+    # 4. Check user account
+    result = await db.execute(
+        select(User).where(User.id == user_id)
+    )
+
+    user = result.scalar_one_or_none()
+
+    if not user or not user.is_active:
+        raise ValueError("User account is inactive or not found")
+
+    # 5. Revoke old refresh token
+    old_token.revoked = True
+
+    # 6. Generate new tokens
+    new_access_token = create_access_token(str(user.id))
+    new_refresh_token = create_refresh_token(str(user.id))
+
+    new_payload = decode_token(new_refresh_token)
+
+    new_expires_at = datetime.fromtimestamp(
+        new_payload["exp"],
+        tz=timezone.utc,
+    )
+
+    new_token_hash = hashlib.sha256(
+        new_refresh_token.encode()
+    ).hexdigest()
+
+    # 7. Save new refresh token
+    db.add(
+        RefreshToken(
+            user_id=user.id,
+            token_hash=new_token_hash,
+            expires_at=new_expires_at,
+            revoked=False,
+        )
+    )
+
+    await db.commit()
+
+    return {
+        "access_token": new_access_token,
+        "refresh_token": new_refresh_token,
+        "token_type": "bearer",
+        "expires_in": 900,
+    }
+
+async def refresh_access_token(
+    db: AsyncSession,
+    refresh_token: str,
+) -> dict:
+
+    # 1. Decode and validate JWT
+    try:
+        payload = decode_token(refresh_token)
+    except JWTError:
+        raise ValueError("Invalid or expired refresh token")
+
+    if payload.get("type") != "refresh":
+        raise ValueError("Invalid refresh token")
+
+    try:
+        user_id = uuid.UUID(payload["sub"])
+    except (ValueError, KeyError, TypeError):
+        raise ValueError("Invalid refresh token")
+
+    # 2. Hash incoming refresh token
+    token_hash = hashlib.sha256(
+        refresh_token.encode()
+    ).hexdigest()
+
+    # 3. Find stored token and lock its row
+    result = await db.execute(
+        select(RefreshToken)
+        .where(
+            RefreshToken.token_hash == token_hash,
+            RefreshToken.user_id == user_id,
+        )
+        .with_for_update()
+    )
+
+    old_token = result.scalar_one_or_none()
+
+    if not old_token or old_token.revoked:
+        raise ValueError("Refresh token revoked or not found")
+
+    if old_token.expires_at <= datetime.now(timezone.utc):
+        raise ValueError("Refresh token expired")
+
+    # 4. Check user account
+    result = await db.execute(
+        select(User).where(User.id == user_id)
+    )
+
+    user = result.scalar_one_or_none()
+
+    if not user or not user.is_active:
+        raise ValueError("User account is inactive or not found")
+
+    # 5. Revoke old refresh token
+    old_token.revoked = True
+
+    # 6. Generate new tokens
+    new_access_token = create_access_token(str(user.id))
+    new_refresh_token = create_refresh_token(str(user.id))
+
+    new_payload = decode_token(new_refresh_token)
+
+    new_expires_at = datetime.fromtimestamp(
+        new_payload["exp"],
+        tz=timezone.utc,
+    )
+
+    new_token_hash = hashlib.sha256(
+        new_refresh_token.encode()
+    ).hexdigest()
+
+    # 7. Save new refresh token
+    db.add(
+        RefreshToken(
+            user_id=user.id,
+            token_hash=new_token_hash,
+            expires_at=new_expires_at,
+            revoked=False,
+        )
+    )
+
+    await db.commit()
+
+    return {
+        "access_token": new_access_token,
+        "refresh_token": new_refresh_token,
+        "token_type": "bearer",
+        "expires_in": 900,
+    }
