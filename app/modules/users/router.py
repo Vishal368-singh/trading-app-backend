@@ -21,6 +21,9 @@ async def get_my_profile(
         "role": current_user.role,
         "is_active": current_user.is_active,
         "is_verified": current_user.is_verified,
+        "profile_image":current_user.profile_image,
+        "age":current_user.age,
+        "mobile":current_user.mobile,
         "preferences": (
             {
                 "market": preferences.market,
@@ -29,6 +32,10 @@ async def get_my_profile(
                 "default_timeframe": preferences.default_timeframe,
                 "theme": preferences.theme,
                 "notifications_enabled": preferences.notifications_enabled,
+                "exchanges": preferences.exchanges,
+                "segments": preferences.segments,
+                "watchlists": preferences.watchlists,
+                "alerts": preferences.alerts
             }
             if preferences else None
         ),

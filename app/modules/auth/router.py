@@ -1,9 +1,10 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.dependencies import get_current_user
 from app.db.session import get_db
-from app.modules.auth.schemas import LoginRequest, SignupRequest, TokenResponse
-from app.modules.auth.service import login_user, signup_user
+from app.modules.auth.schemas import LoginRequest, LogoutRequest, SignupRequest, TokenResponse
+from app.modules.auth.service import login_user, signup_user, logout_user
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
 
@@ -66,4 +67,27 @@ async def login(
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid email or password",
+        )
+
+@router.post("/logout", status_code=status.HTTP_200_OK)
+async def logout(
+    payload: LogoutRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user=Depends(get_current_user),
+):
+    try:
+        await logout_user(
+            db=db,
+            user_id=current_user.id,
+            refresh_token=payload.refresh_token,
+        )
+
+        return {
+            "message": "Successfully logged out"
+        }
+
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
         )

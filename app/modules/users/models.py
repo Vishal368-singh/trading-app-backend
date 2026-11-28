@@ -3,7 +3,7 @@ import uuid
 from datetime import datetime
 
 from sqlalchemy.orm import Mapped, mapped_column, relationship
-from sqlalchemy import Uuid
+from sqlalchemy import Text, Uuid
 from sqlalchemy import String, Boolean, DateTime, func, ForeignKey, Integer, JSON, text
 from sqlalchemy.dialects.postgresql import JSONB
 from app.db.base import Base
@@ -34,15 +34,21 @@ class User(Base):
     )
     
     mobile: Mapped[str] = mapped_column(
-    String(15),
-    unique=True,
-    index=True,
-    nullable=False,
+        String(15),
+        unique=True,
+        index=True,
+        nullable=False,
     )
 
     age: Mapped[int | None] = mapped_column(
         Integer,
         nullable=True,
+    )
+
+    profile_image: Mapped[str | None] = mapped_column(
+        Text,
+        nullable=True,
+        default=None,
     )
 
     password_hash: Mapped[str] = mapped_column(

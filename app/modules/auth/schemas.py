@@ -57,6 +57,9 @@ class LoginRequest(BaseModel):
     )
     password: str = Field(min_length=1, max_length=128)
 
+class LogoutRequest(BaseModel):
+    refresh_token: str
+
 
 class TokenResponse(BaseModel):
     access_token: str
